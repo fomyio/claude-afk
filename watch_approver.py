@@ -124,14 +124,16 @@ def _send_ntfy(summary: str, port: int, config: dict) -> None:
     base_url = f"http://127.0.0.1:{port}"
 
     headers = {
-        "Title": "🤖 Claude wants permission",
+        # Headers must be latin-1 safe — no emojis here.
+        # ntfy renders Tags as emoji icons natively (robot = 🤖, key = 🔑).
+        "Title": "Claude Code wants permission",
         "Priority": "high",
         "Tags": "robot,key",
-        # ntfy actions: label, url
+        # ntfy action button labels — plain ASCII only
         "Actions": (
-            f"view, ✅ Approve, {base_url}/approve, clear=true; "
-            f"view, 🔁 Always, {base_url}/always, clear=true; "
-            f"view, ❌ Reject, {base_url}/reject, clear=true"
+            f"view, Approve, {base_url}/approve, clear=true; "
+            f"view, Always Allow, {base_url}/always, clear=true; "
+            f"view, Reject, {base_url}/reject, clear=true"
         ),
         "Content-Type": "text/plain; charset=utf-8",
     }
