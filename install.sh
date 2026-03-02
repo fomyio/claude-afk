@@ -39,10 +39,25 @@ mkdir -p "$HOOKS_DIR"
 CONFIG_DEST="$HOOKS_DIR/config.json"
 
 if [ -f "$CONFIG_DEST" ]; then
+  EXISTING_TOPIC=$(python3 -c "import json; d=json.load(open('$CONFIG_DEST')); print(d['ntfy']['topic'])" 2>/dev/null || echo "unknown")
   echo ""
-  echo "ℹ️   Existing config found at $CONFIG_DEST — skipping topic setup."
-  TOPIC=$(python3 -c "import json; d=json.load(open('$CONFIG_DEST')); print(d['ntfy']['topic'])")
-else
+  echo "⚠️   Existing config found at $CONFIG_DEST"
+  echo "     Current topic: $EXISTING_TOPIC"
+  echo ""
+  read -p "   Keep existing config? [Y/n]: " KEEP_CONFIG
+  KEEP_CONFIG="${KEEP_CONFIG:-Y}"  # default to Y
+  if [[ "$KEEP_CONFIG" =~ ^[Yy]$ ]]; then
+    TOPIC="$EXISTING_TOPIC"
+    echo "   ✅  Keeping existing config."
+  else
+    echo "   🔄  Resetting config — generating new topic..."
+    rm "$CONFIG_DEST"
+    # Fall through to the generation block below
+    RESET_CONFIG=true
+  fi
+fi
+
+if [ ! -f "$CONFIG_DEST" ]; then
   # Generate a memorable 5-word topic from a curated common-words list
   AUTO_TOPIC=$(python3 - <<'PYEOF'
 import secrets
