@@ -1,5 +1,8 @@
 # 🤖⌚ claude-afk
 
+<img width="3168" height="1344" alt="image" src="https://github.com/user-attachments/assets/0cec1e04-30c5-457c-94f3-bbfd29c7a9eb" />
+---
+
 **Claude codes. You approve from the couch, the coffee shop, or mid-cat-cuddle.**
 
 Kick off a task in your terminal and walk away. When Claude needs a decision, your Apple Watch, iPhone, or Android buzzes — tap **Approve** and it keeps going. One-command install. No cloud server. No custom app.
