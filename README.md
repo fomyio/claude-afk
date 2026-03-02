@@ -98,10 +98,33 @@ Runs summarizer unit tests and validates the hook output schema using a local si
 
 ## Security
 
-- **Keep your topic secret** — it's your auth token. Anyone with it can send you fake approval requests.
-- The topic is auto-generated as a 32-character random string on install.
-- `config.json` is git-ignored.
-- The hook runs a temporary local HTTP server (random port, loopback only) per request — no port stays open.
+### Per-request secret token
+Every permission request generates a fresh **16-byte random token** (`secrets.token_urlsafe(16)`) that is embedded in the ntfy action button URLs:
+
+```
+http://192.168.x.x:45678/approve?token=abc123xyz...
+```
+
+The local callback server validates the token using `secrets.compare_digest()` (constant-time comparison, safe against timing attacks) and returns **403 Forbidden** for any request with a missing or incorrect token.
+
+This means:
+- Even if another device on your LAN knows the port number, they cannot approve/reject a Claude command without the exact token
+- The token is included in the ntfy notification (only you receive it)
+- The token is generated fresh for every permission request — compromise of one token has no effect on future requests
+
+### Keep your ntfy topic secret
+Your topic name acts as an authentication layer for *who receives* the notification. Anyone who knows your topic can send you fake requests. The auto-generated topic is a 5-word random phrase — keep it private.
+
+### Port exposure
+Port `45678` (configurable via `callback_port` in `config.json`) is only open on your LAN. It is not internet-accessible unless you have explicit port forwarding set up on your router. The server only runs during the ~60 second window when Claude is waiting for your response.
+
+### macOS firewall
+The installer adds Python to the macOS application firewall allow list. This allows any Python script to accept incoming connections — not just this hook. If you prefer a tighter configuration, you can manually add a port-specific rule instead:
+```bash
+# Allow only port 45678 inbound (requires pf setup — advanced)
+echo "pass in proto tcp from any to any port 45678" | sudo pfctl -f -
+```
+
 
 ## Project structure
 

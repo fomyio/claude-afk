@@ -12,10 +12,10 @@ Usage (configured automatically by install.sh):
 import http.server
 import json
 import os
+import secrets
 import socket
 import sys
 import threading
-import time
 import urllib.request
 import urllib.parse
 from pathlib import Path
@@ -71,15 +71,32 @@ def _output_decision(behavior: str, reason: str = "", always: bool = False) -> N
 # ---------------------------------------------------------------------------
 
 class _CallbackHandler(http.server.BaseHTTPRequestHandler):
-    """Tiny HTTP server that listens for one tap from the ntfy action button."""
+    """Tiny HTTP server that listens for one tap from the ntfy action button.
 
-    result: str | None = None  # "approve" | "always" | "reject"
+    Security: each request includes a random token generated at server start.
+    The server rejects any request that doesn't carry the correct token,
+    preventing other devices on the LAN from spoofing approve/reject.
+    """
+
+    result: str | None = None        # "approve" | "always" | "reject"
     _lock = threading.Event()
+    _expected_token: str = ""        # set per-request in _start_callback_server
 
     def do_GET(self):
-        path = self.path.strip("/").lower()
-        if path in ("approve", "always", "reject"):
-            _CallbackHandler.result = path
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        token = params.get("token", [""])[0]
+
+        # ── Token check ────────────────────────────────────────────────────
+        if not secrets.compare_digest(token, _CallbackHandler._expected_token):
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(b"Forbidden")
+            return
+
+        action = parsed.path.strip("/").lower()
+        if action in ("approve", "always", "reject"):
+            _CallbackHandler.result = action
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"OK")
@@ -105,7 +122,9 @@ def _get_callback_port(config: dict) -> int:
 
 
 def _start_callback_server(port: int) -> http.server.HTTPServer:
-    # Reset state for this request
+    # Generate a fresh random token for this request
+    _CallbackHandler._expected_token = secrets.token_urlsafe(16)
+    # Reset state
     _CallbackHandler.result = None
     _CallbackHandler._lock.clear()
     # Bind to 0.0.0.0 so iPhone/Watch on the same LAN can reach us
@@ -135,6 +154,7 @@ def _send_ntfy(summary: str, port: int, config: dict) -> None:
     except Exception:
         local_ip = "127.0.0.1"
     base_url = f"http://{local_ip}:{port}"
+    token = _CallbackHandler._expected_token  # set by _start_callback_server
 
     headers = {
         # Headers must be latin-1 safe — no emojis here.
@@ -142,13 +162,14 @@ def _send_ntfy(summary: str, port: int, config: dict) -> None:
         "Title": "ClaudeCode",
         "Priority": "high",
         "Tags": "robot,key",
-        # Use 'http' action type (not 'view') so ntfy sends a background HTTP
-        # request from the app — this works on Apple Watch via companion app,
-        # whereas 'view' (open URL in browser) does not work on watchOS.
+        # 'http' action type: ntfy sends a background HTTP request from the app.
+        # Works on Apple Watch via companion app (unlike 'view' which opens a browser).
+        # Token in URL prevents LAN spoofing — only the notification recipient
+        # who received the exact URL can trigger approve/reject.
         "Actions": (
-            f"http, Approve, {base_url}/approve, method=GET, clear=true; "
-            f"http, Always Allow, {base_url}/always, method=GET, clear=true; "
-            f"http, Reject, {base_url}/reject, method=GET, clear=true"
+            f"http, Approve, {base_url}/approve?token={token}, method=GET, clear=true; "
+            f"http, Always Allow, {base_url}/always?token={token}, method=GET, clear=true; "
+            f"http, Reject, {base_url}/reject?token={token}, method=GET, clear=true"
         ),
         "Content-Type": "text/plain; charset=utf-8",
     }
