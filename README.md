@@ -1,6 +1,8 @@
 # 🤖⌚ claude-afk
 
-<img width="3168" height="1344" alt="image" src="https://github.com/user-attachments/assets/0cec1e04-30c5-457c-94f3-bbfd29c7a9eb" />
+<img width="3168" height="1344" alt="Gemini_Generated_Image_6ylofq6ylofq6ylo (1)" src="https://github.com/user-attachments/assets/f4958f6f-5556-428b-8e75-6294bc105caf" />
+
+
 ---
 
 **Claude codes. You approve from the couch, the coffee shop, or mid-cat-cuddle.**
