@@ -88,15 +88,27 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, *args):
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass  # Suppress request logs
 
 
 def _find_free_port() -> int:
     with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
+        s.bind(("0.0.0.0", 0))
         return s.getsockname()[1]
 
+
+def _get_local_ip() -> str:
+    """Return the Mac's LAN IP so the iPhone/Watch can reach the callback server.
+    Falls back to 127.0.0.1 (loopback) which works for local tests only."""
+    try:
+        # Open a UDP socket toward a public address — no data is sent.
+        # This reveals which local interface/IP would be used for outbound traffic.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
 
 def _start_callback_server() -> tuple[http.server.HTTPServer, int]:
     port = _find_free_port()
@@ -121,12 +133,13 @@ def _send_ntfy(summary: str, port: int, config: dict) -> None:
     if not topic:
         _fatal("ntfy topic not set in config.json.")
 
-    base_url = f"http://127.0.0.1:{port}"
+    local_ip = _get_local_ip()
+    base_url = f"http://{local_ip}:{port}"
 
     headers = {
         # Headers must be latin-1 safe — no emojis here.
-        # ntfy renders Tags as emoji icons natively (robot = 🤖, key = 🔑).
-        "Title": "Claude Code wants permission",
+        # ntfy prepends Tags as emoji icons before the title (robot=🤖, key=🔑).
+        "Title": "ClaudeCode",
         "Priority": "high",
         "Tags": "robot,key",
         # ntfy action button labels — plain ASCII only
@@ -174,7 +187,8 @@ def main() -> None:
         tool = hook_data.get("tool_name", "Unknown")
         ti = hook_data.get("tool_input", {})
         cmd = ti.get("command", ti.get("file_path", ""))
-        summary = f"{tool}: {str(cmd)[:80]}" if cmd else f"{tool} permission requested"
+        cmd_str = str(cmd)
+        summary = f"{tool}: {cmd_str[:80]}" if cmd else f"{tool} permission requested"
 
     # 4. Start local callback server
     server, port = _start_callback_server()
