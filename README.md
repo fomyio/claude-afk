@@ -1,26 +1,66 @@
 # 🤖⌚ Claude Code Apple Watch Approver
 
-Approve or reject Claude Code permission requests directly from your **Apple Watch** (or iPhone). No cloud server. No custom iOS app. Just tap.
+**Approve or reject Claude Code permission requests from your wrist.**
 
-![Notification preview: "🤖 Claude wants permission — Run: rm -rf node_modules" with Approve, Always, Reject buttons]
+When Claude wants to run a command, your Apple Watch buzzes. You glance down, tap **Approve**, **Always Allow**, or **Reject** — and Claude responds instantly. No cloud server. No custom iOS app. No interruptions to your workflow.
+
+---
+
+## Why this exists
+
+Claude Code is powerful — and careful. Before it runs anything potentially destructive, it asks for your permission. That's great. But if you're away from your desk, getting a coffee, or just don't want to tab back to the terminal, that prompt blocks your entire workflow until you respond.
+
+This hook intercepts that prompt and sends it straight to your wrist.
+
+---
 
 ## How it works
 
-1. Claude Code asks for permission to run a command
-2. Your wrist buzzes with a notification summarizing what Claude wants to do
-3. Tap **✅ Approve**, **🔁 Always**, or **❌ Reject** — Claude responds instantly
+```
+Claude wants to run a command
+         │
+         ▼
+watch_approver.py (Claude Code hook)
+  1. Summarizes the request into plain English using LiteLLM
+  2. Sends a notification to your iPhone/Watch via ntfy.sh
+  3. Waits for your tap
+         │
+    ┌────┴────────────┐
+    │  Approve once   │  → Claude continues
+    │  Always Allow   │  → Claude continues + adds to allow list
+    │  Reject         │  → Claude tries another approach
+    └─────────────────┘
+```
 
-Permission requests are summarized by an LLM (Claude Haiku by default) into a single plain-English sentence, so you instantly know what's happening even on a small Watch screen.
+Permission requests are summarized into a single sentence so you know exactly what's happening on a 1.7-inch screen:
+
+> *"Delete all files in node_modules directory"*
+
+instead of a raw command string.
+
+---
+
+## Demo
+
+| On iPhone | On Apple Watch |
+|-----------|----------------|
+| Full notification with Approve / Always Allow / Reject buttons | Alert buzz — grab phone to respond |
+
+> **Note:** Apple Watch shows the notification as a heads-up buzz. Action buttons are on the iPhone. The Watch is your alert; the phone is your control.
+
+---
 
 ## Requirements
 
-- macOS (where Claude Code runs)
+- macOS, Linux, or Windows *(running Claude Code CLI)*
 - Python 3.8+
-- iPhone with the free [ntfy](https://apps.apple.com/app/ntfy/id1625396336) app
-- Apple Watch (paired to the same iPhone)
-- An API key for summarization (optional — Anthropic, OpenAI, etc.)
+- iPhone with the free **[ntfy](https://apps.apple.com/app/ntfy/id1625396336)** app
+- Apple Watch *(for the wrist buzz — iPhone works great on its own too)*
+- Optional: an LLM API key for smart summaries *(Claude Haiku by default — free tier works)*
 
-## Installation
+---
+
+## Install
 
 ```bash
 git clone https://github.com/your-org/ClaudeCodeAppleWatch
@@ -28,32 +68,27 @@ cd ClaudeCodeAppleWatch
 bash install.sh
 ```
 
-The installer will:
-- Install Python dependencies (`requests`, `litellm`)
-- Generate a private random ntfy topic for you
-- Copy scripts to `~/.claude/hooks/`
-- Register the `PermissionRequest` hook in `~/.claude/settings.json`
+The installer handles everything:
 
-Then:
-1. Open the **ntfy** app on your iPhone
-2. Tap **+** → Server: `https://ntfy.sh` → Topic: *(shown at end of install)*
-3. Enable notification permissions when prompted
+1. ✅ Checks Python 3
+2. 📦 Installs `requests` and `litellm`
+3. 🔑 Generates a private 5-word ntfy topic (or you enter your own)
+4. 📁 Copies hook scripts to `~/.claude/hooks/`
+5. 🔒 Opens port 45678 in the macOS firewall *(so your iPhone can reach it)*
+6. ⚙️ Registers the `PermissionRequest` hook in `~/.claude/settings.json`
 
-That's it — run `claude` as normal.
+Then subscribe in the ntfy app:
+```
+ntfy app → + → Server: https://ntfy.sh → Topic: <shown at install>
+```
 
-## Watch actions
+Run `claude` as normal. Your first permission prompt will arrive on your wrist.
 
-| Button | What it does |
-|--------|-------------|
-| ✅ Approve | Allow this command once |
-| 🔁 Always | Allow and never ask again for this tool type |
-| ❌ Reject | Block this command; Claude will try another approach |
-
-If you don't respond within 60 seconds, the request is **denied** by default (safe). Configurable in `config.json`.
+---
 
 ## Configuration
 
-After install, edit `~/.claude/hooks/config.json`:
+`~/.claude/hooks/config.json` — edit after install:
 
 ```json
 {
@@ -66,78 +101,101 @@ After install, edit `~/.claude/hooks/config.json`:
     "model": "claude-haiku-3-5",
     "api_key_env": "ANTHROPIC_API_KEY"
   },
+  "callback_port": 45678,
+  "escalation_delay_seconds": 10,
+  "macos_dialog": false,
   "timeout_seconds": 60,
   "timeout_action": "deny"
 }
 ```
 
-### Disabling the summarizer
+| Key | Default | Description |
+|-----|---------|-------------|
+| `ntfy.topic` | *(generated)* | Your private ntfy topic — keep it secret |
+| `summarizer.enabled` | `true` | Use LLM to summarize requests |
+| `summarizer.model` | `claude-haiku-3-5` | Any [LiteLLM-supported model](https://docs.litellm.ai/docs/providers) |
+| `callback_port` | `45678` | Fixed port the hook listens on |
+| `escalation_delay_seconds` | `10` | Seconds before escalating *(if `macos_dialog` is on)* |
+| `macos_dialog` | `false` | Show a native macOS dialog before sending to Watch |
+| `timeout_seconds` | `60` | How long to wait before auto-deny |
+| `timeout_action` | `"deny"` | `"deny"` or `"allow"` on timeout |
 
-Set `"enabled": false` — a local fallback formatter will be used instead (no API call, free).
-
-### Using a different LLM
-
-Change `model` to any [LiteLLM-supported model](https://docs.litellm.ai/docs/providers), e.g.:
+### Use a different LLM
 
 ```json
 "model": "gpt-4o-mini",
 "api_key_env": "OPENAI_API_KEY"
 ```
 
-### Self-hosting ntfy
+Any model supported by LiteLLM works — Gemini, Mistral, local Ollama, etc.
 
-Change `"server"` to your own ntfy instance URL.
+### Self-host ntfy
 
-## Testing (no Watch required)
+Point `"server"` at your own ntfy instance for full data sovereignty.
+
+### Optional: macOS dialog before Watch
+
+Enable a native Mac dialog that appears for 10 seconds before escalating to your Watch — handy if you're at your desk:
+
+```json
+"macos_dialog": true
+```
+
+---
+
+## Security
+
+### Per-request token
+Every notification includes a random **16-byte secret token** embedded in the action button URLs:
+```
+http://192.168.x.x:45678/approve?token=X7kP2mNqRs4vW9tL
+```
+The local server validates it using `secrets.compare_digest()` (timing-safe). Any request without the correct token gets **403 Forbidden** — even from devices on your LAN.
+
+### Private ntfy topic
+Your topic name is the first line of defense — only devices subscribed to your topic receive the notification. The auto-generated topic is a random 5-word phrase. Keep it private.
+
+### Port scope
+Port `45678` is only reachable on your local network. It's not exposed to the internet unless you've set up explicit port forwarding. The server only runs for the duration of each permission request (~60s max).
+
+---
+
+## Compatibility
+
+| Surface | Hooks supported? |
+|---------|-----------------|
+| `claude` in terminal | ✅ Full support |
+| Claude Code (any terminal) | ✅ Full support |
+| VS Code / Desktop app | ❌ These use built-in native UIs |
+
+> This project uses Claude Code's `PermissionRequest` hook — a feature **unique to Claude Code** among major AI CLI agents. Gemini CLI, Codex CLI, and Aider don't have an equivalent hook system as of early 2025.
+
+---
+
+## Testing
 
 ```bash
 python3 test_hook.py
 ```
 
-Runs summarizer unit tests and validates the hook output schema using a local simulated request.
+Validates the summarizer, hook JSON output, and simulates a full permission request locally — no Watch needed.
 
-## Security
-
-### Per-request secret token
-Every permission request generates a fresh **16-byte random token** (`secrets.token_urlsafe(16)`) that is embedded in the ntfy action button URLs:
-
-```
-http://192.168.x.x:45678/approve?token=abc123xyz...
-```
-
-The local callback server validates the token using `secrets.compare_digest()` (constant-time comparison, safe against timing attacks) and returns **403 Forbidden** for any request with a missing or incorrect token.
-
-This means:
-- Even if another device on your LAN knows the port number, they cannot approve/reject a Claude command without the exact token
-- The token is included in the ntfy notification (only you receive it)
-- The token is generated fresh for every permission request — compromise of one token has no effect on future requests
-
-### Keep your ntfy topic secret
-Your topic name acts as an authentication layer for *who receives* the notification. Anyone who knows your topic can send you fake requests. The auto-generated topic is a 5-word random phrase — keep it private.
-
-### Port exposure
-Port `45678` (configurable via `callback_port` in `config.json`) is only open on your LAN. It is not internet-accessible unless you have explicit port forwarding set up on your router. The server only runs during the ~60 second window when Claude is waiting for your response.
-
-### macOS firewall
-The installer adds Python to the macOS application firewall allow list. This allows any Python script to accept incoming connections — not just this hook. If you prefer a tighter configuration, you can manually add a port-specific rule instead:
-```bash
-# Allow only port 45678 inbound (requires pf setup — advanced)
-echo "pass in proto tcp from any to any port 45678" | sudo pfctl -f -
-```
-
+---
 
 ## Project structure
 
 ```
 ClaudeCodeAppleWatch/
-├── watch_approver.py       ← Claude Code hook entry point
-├── summarizer.py           ← LiteLLM summarization (with fallback)
-├── config.example.json     ← Config template
-├── install.sh              ← One-command setup
-├── test_hook.py            ← Local test suite
+├── watch_approver.py    ← Hook entry point: server, ntfy, decision logic
+├── summarizer.py        ← LiteLLM summarization with local fallback
+├── config.example.json  ← Config template
+├── install.sh           ← One-command setup
+├── test_hook.py         ← Local test suite
 └── README.md
 ```
 
+---
+
 ## License
 
-MIT
+MIT — use it, fork it, build on it.
