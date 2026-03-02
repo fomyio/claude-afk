@@ -147,9 +147,10 @@ else:
 
 hook_command = "python3 ~/.claude/hooks/watch_approver.py"
 
-# New format: { matcher: {}, hooks: [{ type, command }] }
+# New format: { matcher: "", hooks: [{ type, command }] }
+# matcher is a string: "" matches all tools, "Bash" matches only Bash, etc.
 new_entry = {
-    "matcher": {},
+    "matcher": "",
     "hooks": [{"type": "command", "command": hook_command}]
 }
 
