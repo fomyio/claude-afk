@@ -2,7 +2,12 @@
 summarizer.py
 Summarizes a Claude Code PermissionRequest into a short, Watch-friendly sentence.
 Uses LiteLLM so the user can pick any LLM provider.
-Falls back to a plain formatted string if LiteLLM is unavailable / disabled.
+
+API key: Claude Code passes ANTHROPIC_API_KEY to all hooks automatically.
+No manual key setup needed — it just works out of the box.
+If you use a different provider, set the relevant env var and update config.json.
+
+Falls back to a plain formatted string if LiteLLM is unavailable or disabled.
 """
 
 import json
@@ -61,14 +66,18 @@ def summarize(hook_data: dict, config: dict) -> str:
     summarizer_cfg = config.get("summarizer", {})
     enabled = summarizer_cfg.get("enabled", True)
     model = summarizer_cfg.get("model", "claude-haiku-3-5")
-    api_key_env = summarizer_cfg.get("api_key_env", "ANTHROPIC_API_KEY")
 
     if not enabled:
         return _format_fallback(tool_name, tool_input, cwd)
 
-    # Check API key is set
-    api_key = os.environ.get(api_key_env, "")
+    # Claude Code passes ANTHROPIC_API_KEY to all hooks automatically.
+    # For other providers, set the relevant env var and update 'model' in config.
+    # Key resolution order: ANTHROPIC_API_KEY → any key from api_key_env in config.
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get(
+        summarizer_cfg.get("api_key_env", ""), ""
+    )
     if not api_key:
+        # No key available — use local fallback (free, no API call)
         return _format_fallback(tool_name, tool_input, cwd)
 
     try:

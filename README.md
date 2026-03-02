@@ -61,7 +61,6 @@ instead of a raw command string.
 - Python 3.8+
 - iPhone with the free **[ntfy](https://apps.apple.com/app/ntfy/id1625396336)** app
 - Apple Watch *(for the wrist buzz — iPhone works great on its own too)*
-- Optional: an LLM API key for smart summaries *(Claude Haiku by default — free tier works)*
 
 ---
 
@@ -103,8 +102,7 @@ Run `claude` as normal. Your first permission prompt will arrive on your wrist.
   },
   "summarizer": {
     "enabled": true,
-    "model": "claude-haiku-3-5",
-    "api_key_env": "ANTHROPIC_API_KEY"
+    "model": "claude-haiku-3-5"
   },
   "callback_port": 45678,
   "escalation_delay_seconds": 10,
@@ -124,6 +122,8 @@ Run `claude` as normal. Your first permission prompt will arrive on your wrist.
 | `macos_dialog` | `false` | Show a native macOS dialog before sending to Watch |
 | `timeout_seconds` | `60` | How long to wait before auto-deny |
 | `timeout_action` | `"deny"` | `"deny"` or `"allow"` on timeout |
+
+> **API key**: Claude Code passes `ANTHROPIC_API_KEY` to all hooks automatically — no setup needed. The summarizer works out of the box.
 
 ### Use a different LLM
 
