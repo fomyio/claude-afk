@@ -119,7 +119,22 @@ print(f"✅  Config written to {dest}")
 PYEOF
 fi
 
-# ── 5. Copy scripts to hooks directory ─────────────────────────────────────
+# ── 5. Open callback port in macOS firewall ────────────────────────────────
+CALLBACK_PORT=$(python3 -c "import json,pathlib; d=json.loads(pathlib.Path('$CONFIG_DEST').read_text()); print(d.get('callback_port', 45678))" 2>/dev/null || echo "45678")
+echo ""
+echo "🔒  Opening firewall port $CALLBACK_PORT for LAN callbacks (requires sudo)..."
+if sudo /usr/libexec/ApplicationFirewall/socketfilterfw \
+     --add "$(command -v python3)" \
+     --unblock "$(command -v python3)" &>/dev/null; then
+  echo "✅  Python allowed through macOS firewall."
+else
+  echo "⚠️   Could not update firewall automatically."
+  echo "     If iPhone/Watch buttons don't respond, go to:"
+  echo "     System Settings → Privacy & Security → Firewall → Options"
+  echo "     → Allow incoming connections for Python"
+fi
+
+# ── 6. Copy scripts to hooks directory ─────────────────────────────────────
 echo ""
 echo "📁  Copying scripts to $HOOKS_DIR..."
 cp "$SCRIPT_DIR/watch_approver.py" "$HOOKS_DIR/watch_approver.py"

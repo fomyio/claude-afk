@@ -92,33 +92,27 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         pass  # Suppress request logs
 
 
-def _find_free_port() -> int:
+def _get_callback_port(config: dict) -> int:
+    """Use a fixed port from config so macOS firewall rules stay stable.
+    Falls back to a random free port if not configured."""
+    fixed = config.get("callback_port")
+    if fixed:
+        return int(fixed)
+    # Dynamic fallback (useful for testing, but firewall may block LAN access)
     with socket.socket() as s:
         s.bind(("0.0.0.0", 0))
         return s.getsockname()[1]
 
 
-def _get_local_ip() -> str:
-    """Return the Mac's LAN IP so the iPhone/Watch can reach the callback server.
-    Falls back to 127.0.0.1 (loopback) which works for local tests only."""
-    try:
-        # Open a UDP socket toward a public address — no data is sent.
-        # This reveals which local interface/IP would be used for outbound traffic.
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))
-            return s.getsockname()[0]
-    except Exception:
-        return "127.0.0.1"
-
-def _start_callback_server() -> tuple[http.server.HTTPServer, int]:
-    port = _find_free_port()
+def _start_callback_server(port: int) -> http.server.HTTPServer:
     # Reset state for this request
     _CallbackHandler.result = None
     _CallbackHandler._lock.clear()
-    server = http.server.HTTPServer(("127.0.0.1", port), _CallbackHandler)
+    # Bind to 0.0.0.0 so iPhone/Watch on the same LAN can reach us
+    server = http.server.HTTPServer(("0.0.0.0", port), _CallbackHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    return server, port
+    return server
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +127,13 @@ def _send_ntfy(summary: str, port: int, config: dict) -> None:
     if not topic:
         _fatal("ntfy topic not set in config.json.")
 
-    local_ip = _get_local_ip()
+    # Get Mac's LAN IP via UDP trick (no data sent)
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _s:
+            _s.connect(("8.8.8.8", 80))
+            local_ip = _s.getsockname()[0]
+    except Exception:
+        local_ip = "127.0.0.1"
     base_url = f"http://{local_ip}:{port}"
 
     headers = {
@@ -142,11 +142,13 @@ def _send_ntfy(summary: str, port: int, config: dict) -> None:
         "Title": "ClaudeCode",
         "Priority": "high",
         "Tags": "robot,key",
-        # ntfy action button labels — plain ASCII only
+        # Use 'http' action type (not 'view') so ntfy sends a background HTTP
+        # request from the app — this works on Apple Watch via companion app,
+        # whereas 'view' (open URL in browser) does not work on watchOS.
         "Actions": (
-            f"view, Approve, {base_url}/approve, clear=true; "
-            f"view, Always Allow, {base_url}/always, clear=true; "
-            f"view, Reject, {base_url}/reject, clear=true"
+            f"http, Approve, {base_url}/approve, method=GET, clear=true; "
+            f"http, Always Allow, {base_url}/always, method=GET, clear=true; "
+            f"http, Reject, {base_url}/reject, method=GET, clear=true"
         ),
         "Content-Type": "text/plain; charset=utf-8",
     }
@@ -190,8 +192,9 @@ def main() -> None:
         cmd_str = str(cmd)
         summary = f"{tool}: {cmd_str[:80]}" if cmd else f"{tool} permission requested"
 
-    # 4. Start local callback server
-    server, port = _start_callback_server()
+    # 4. Start local callback server on fixed (or dynamic) port
+    port = _get_callback_port(config)
+    server = _start_callback_server(port)
 
     try:
         # 5. Fire the ntfy notification
