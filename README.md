@@ -1,4 +1,4 @@
-# 🤖⌚ claude-afk
+# 🤖⌚ clauding-afk
 
 <img width="1024" height="339" alt="image" src="https://github.com/user-attachments/assets/40a7436a-85cb-4489-b46a-0d4d160d226e" />
 
@@ -14,7 +14,7 @@ Kick off a task in your terminal and walk away. When Claude needs a decision, yo
 
 ## Why this exists
 
-![claude-afk-demo-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/912a5655-b186-4db8-b9d5-6e7b5585cfef)
+![clauding-afk-demo-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/912a5655-b186-4db8-b9d5-6e7b5585cfef)
 
 Claude Code is powerful — and careful. Before it runs anything potentially destructive, it asks for your permission. That's great. But if you're away from your desk, getting a coffee, or just don't want to tab back to the terminal, that prompt blocks your entire workflow until you respond.
 
@@ -69,20 +69,20 @@ instead of a raw command string.
 
 ## Install
 
-It takes 10 seconds. `claude-afk` is a native Claude Code plugin.
+It takes 10 seconds. `clauding-afk` is a native Claude Code plugin.
 
 ```bash
 # 1. Add the GitHub repo as a marketplace
-claude plugin marketplace add fomyio/claude-afk
+claude plugin marketplace add fomyio/clauding-afk
 
 # 2. Install the plugin
-claude plugin install claude-afk
+claude plugin install clauding-afk
 ```
 
 ### 1. Set up your config
 ```bash
-mkdir -p ~/.config/claude-afk
-cp ~/.claude/plugins/claude-afk/config.example.json ~/.config/claude-afk/config.json
+mkdir -p ~/.config/clauding-afk
+cp ~/.claude/plugins/clauding-afk/config.example.json ~/.config/clauding-afk/config.json
 ```
 
 ### 1. Set up ntfy
@@ -92,7 +92,7 @@ cp ~/.claude/plugins/claude-afk/config.example.json ~/.config/claude-afk/config.
    *Tip: Use a long, unguessable string.*
 
 ### 2. Add topic to config
-Edit `~/.config/claude-afk/config.json` and replace the placeholder with your secret topic name.
+Edit `~/.config/clauding-afk/config.json` and replace the placeholder with your secret topic name.
 
 ### 3. (Optional) Enable AI Summaries
 By default, you get raw command strings. For nice human-readable summaries powered by your existing Claude API key, install LiteLLM globally:
@@ -206,7 +206,7 @@ Validates the summarizer, hook JSON output, and simulates a full permission requ
 ## Project structure
 
 ```
-claude-afk/
+clauding-afk/
 ├── .claude-plugin/      ← Plugin manifest
 ├── hooks/               ← Auto-registers PermissionRequest hook
 ├── watch_approver.py    ← Hook entry point: server, ntfy, decision logic

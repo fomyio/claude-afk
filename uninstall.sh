@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# uninstall.sh — Cleans up the legacy manual installation of claude-afk
+# uninstall.sh — Cleans up the legacy manual installation of clauding-afk
 
 set -e
 
 HOOKS_DIR="$HOME/.claude/hooks"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 
-echo "🤖 claude-afk — Legacy Uninstaller"
+echo "🤖 clauding-afk — Legacy Uninstaller"
 echo "=================================="
 
 echo "1. Removing hook from $CLAUDE_SETTINGS..."
@@ -46,12 +46,12 @@ echo "✅  Scripts removed."
 
 if [ -f "$HOOKS_DIR/config.json" ]; then
     echo "⚠️  Found legacy config at $HOOKS_DIR/config.json."
-    read -p "Do you want to move it to the new plugin config location (~/.config/claude-afk/config.json)? [Y/n] " MOVE_CONFIG
+    read -p "Do you want to move it to the new plugin config location (~/.config/clauding-afk/config.json)? [Y/n] " MOVE_CONFIG
     MOVE_CONFIG=${MOVE_CONFIG:-Y}
     if [[ "$MOVE_CONFIG" =~ ^[Yy]$ ]]; then
-        mkdir -p ~/.config/claude-afk
-        mv "$HOOKS_DIR/config.json" ~/.config/claude-afk/config.json
-        echo "✅  Config moved to ~/.config/claude-afk/config.json"
+        mkdir -p ~/.config/clauding-afk
+        mv "$HOOKS_DIR/config.json" ~/.config/clauding-afk/config.json
+        echo "✅  Config moved to ~/.config/clauding-afk/config.json"
     else
         echo "⏭️  Leaving config in $HOOKS_DIR."
     fi
@@ -59,4 +59,4 @@ fi
 
 echo ""
 echo "Uninstall complete! You can now safely install the plugin version:"
-echo "claude /plugin install https://github.com/fomyio/claude-afk"
+echo "claude /plugin install https://github.com/fomyio/clauding-afk"

@@ -8,7 +8,7 @@
     },
     "plugins": [
         {
-            "name": "claude-afk",
+            "name": "clauding-afk",
             "description": "Approve Claude Code permission requests remotely from your Apple Watch or phone.",
             "version": "1.0.0",
             "author": {
