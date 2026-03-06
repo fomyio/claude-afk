@@ -213,9 +213,9 @@ def _send_ntfy(summary: str, port: int, config: dict):
     headers = {
         # Headers must be latin-1 safe — no emojis here.
         # ntfy prepends Tags as emoji icons before the title (robot=🤖, key=🔑).
-        "Title": "ClaudeCode",
+        "Title": "ClaudeCode Plugin",
         "Priority": "high",
-        "Tags": "robot,key",
+        "Tags": "electric_plug,robot,key",
         # 'http' action type: ntfy sends a background HTTP request from the app.
         # Works on Apple Watch via companion app (unlike 'view' which opens a browser).
         # Token in URL prevents LAN spoofing — only the notification recipient
