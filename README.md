@@ -1,24 +1,14 @@
-# 🤖⌚ clauding-afk
+# 🔌🤖 clauding-afk
 
 <img width="1024" height="339" alt="image" src="https://github.com/user-attachments/assets/40a7436a-85cb-4489-b46a-0d4d160d226e" />
 
-
 ---
 
-**Claude codes. You approve from the couch, the coffee shop, or mid-cat-cuddle.**
+**Claude codes. You approve from anywhere — couch, coffee shop, or mid-cat-cuddle.**
 
-Kick off a task in your terminal and walk away. When Claude needs a decision, your Apple Watch, iPhone, or Android buzzes — tap **Approve** and it keeps going. One-command install. No cloud server. No custom app.
+Kick off a long task and walk away. When Claude needs a decision, your **Apple Watch, iPhone, or Android** buzzes. Tap **Approve** and it keeps going.
 
-
----
-
-## Why this exists
-
-![clauding-afk-demo-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/912a5655-b186-4db8-b9d5-6e7b5585cfef)
-
-Claude Code is powerful — and careful. Before it runs anything potentially destructive, it asks for your permission. That's great. But if you're away from your desk, getting a coffee, or just don't want to tab back to the terminal, that prompt blocks your entire workflow until you respond.
-
-This hook intercepts that prompt and sends it straight to your wrist.
+**Works with all Claude plans** · **Claude Code terminal** · **VS Code extension** · **No cloud server needed**
 
 ---
 
@@ -28,178 +18,161 @@ This hook intercepts that prompt and sends it straight to your wrist.
 Claude wants to run a command
          │
          ▼
-watch_approver.py (Claude Code hook)
-  1. Summarizes the request into plain English using Claude Haiku (no config needed)
-  2. Sends a notification to your iPhone/Watch via ntfy.sh
-  3. Waits for your tap
+clauding-afk (Claude Code plugin)
+  1. Shows a quick prompt in your terminal (tap A to approve in < 1s)
+  2. After 10s with no response → sends a push notification via ntfy.sh
+  3. Tap Approve on your phone/Watch → Claude continues instantly
          │
-    ┌────┴────────────┐
-    │  Approve once   │  → Claude continues
-    │  Always Allow   │  → Claude continues + adds to allow list
-    │  Reject         │  → Claude tries another approach
-    └─────────────────┘
+    ┌────┴────────────────┐
+    │  Approve            │ → Claude continues
+    │  Always Allow       │ → Claude continues + adds to allow-list
+    │  Reject             │ → Claude tries another approach
+    └─────────────────────┘
 ```
 
-Permission requests are summarized into a single sentence so you know exactly what's happening on a 1.7-inch screen:
-
-> *"Delete all files in node_modules directory"*
-
-instead of a raw command string.
+The **Approve button** works through the internet (ntfy.sh cloud relay) — no ports to open, no local network required. Tap from anywhere.
 
 ---
 
 ## Demo
 
-| On iPhone | On Apple Watch |
-|-----------|----------------|
-| Full notification with Approve / Always Allow / Reject buttons | Alert buzz — grab phone to respond |
+![clauding-afk-demo-ezgif com-video-to-gif-converter](https://github.com/user-attachments/assets/912a5655-b186-4db8-b9d5-6e7b5585cfef)
 
-> **Note:** Apple Watch shows the notification as a heads-up buzz. Action buttons are on the iPhone. The Watch is your alert; the phone is your control.
+> **Apple Watch:** vibrates with a heads-up alert. Action buttons are on the iPhone/phone. Watch = your alert, phone = your control.
 
 ---
 
 ## Requirements
 
-- macOS, Linux, or Windows *(running Claude Code CLI)*
-- Python 3.8+
-- iPhone with the free **[ntfy](https://apps.apple.com/app/ntfy/id1625396336)** app
-- Apple Watch *(for the wrist buzz — iPhone works great on its own too)*
+- **Claude Code CLI** — any plan (Free, Pro, Max, or API)
+- **Python 3.8+** (pre-installed on macOS)
+- **[ntfy](https://ntfy.sh/)** app on your iPhone / Android
+- Apple Watch *(optional — for wrist alerts)*
 
 ---
 
-## Install
+## ⚡ Install — 2 commands
 
-It takes 10 seconds. `clauding-afk` is a native Claude Code plugin.
+No cloning, no scripts. Install directly as a Claude Code plugin:
 
 ```bash
-# 1. Add the GitHub repo as a marketplace
+# Step 1: Add the fomyio marketplace (one-time)
 claude plugin marketplace add fomyio/clauding-afk
 
-# 2. Install the plugin
+# Step 2: Install the plugin
 claude plugin install clauding-afk
 ```
 
-### 1. Set up your config
+That's it. The hook registers automatically — no manual config file edits needed.
+
+### Update later
+
 ```bash
-mkdir -p ~/.config/clauding-afk
-cp ~/.claude/plugins/clauding-afk/config.example.json ~/.config/clauding-afk/config.json
+claude plugin marketplace update fomyio && claude plugin update clauding-afk@fomyio
 ```
 
-### 1. Set up ntfy
-1. Download the [ntfy.sh](https://ntfy.sh/) app on your iPhone and Apple Watch.
-2. Open the app, tap `+` to subscribe to a new topic.
-3. Pick a secret topic name (e.g., `my_secret_claude_channel_123`). 
-   *Tip: Use a long, unguessable string.*
+---
 
-### 2. Add topic to config
-Edit `~/.config/clauding-afk/config.json` and replace the placeholder with your secret topic name.
+## Setup ntfy (2 minutes)
 
-### 3. (Optional) Enable AI Summaries
-By default, you get raw command strings. For nice human-readable summaries powered by your existing Claude API key, install LiteLLM globally:
+### 1. Install the ntfy app
+- **iPhone:** [App Store](https://apps.apple.com/app/ntfy/id1625396336)
+- **Android:** [Play Store / F-Droid](https://ntfy.sh/#subscribe)
+
+### 2. Subscribe to your private topic
+Open the app → tap **+** → enter a **secret, unguessable topic name** (e.g. `my_claude_alerts_x9k2p`). This is your channel — keep it private.
+
+### 3. Add your topic to the config
+
 ```bash
-pip3 install litellm
+# Create config from the example
+mkdir -p ~/.config/claude-afk
+cp "$(claude plugin path clauding-afk)/config.example.json" ~/.config/claude-afk/config.json
+
+# Edit and set your topic
+nano ~/.config/claude-afk/config.json
 ```
 
-### 4. Verify
-Run Claude Code (`claude`) and ask it to run `ls -la`. You should see the prompt in your terminal, and after 10 seconds, your Apple Watch should buzz!
+Set `ntfy.topic` to your chosen topic name. That's the only required change.
+
+### 4. Enable Local Network access (iPhone only)
+
+Go to **iPhone Settings → Privacy & Security → Local Network** and make sure **ntfy** is toggled **ON**.
+
+### 5. Test it
+
+Open Claude Code and ask it to do something outside the auto-approve list (e.g., `create a file called test.txt`). After ~10 seconds the notification should arrive on your phone with **Approve / Always Allow / Reject** buttons.
 
 ---
 
 ## Configuration
 
-`~/.claude/hooks/config.json` — edit after install:
+Config lives at `~/.config/claude-afk/config.json`:
 
 ```json
 {
   "ntfy": {
-    "topic": "your-private-topic",
+    "topic": "your-secret-topic",
     "server": "https://ntfy.sh"
   },
   "summarizer": {
     "enabled": true,
     "model": "claude-haiku-3-5"
   },
-  "callback_port": 45678,
   "escalation_delay_seconds": 10,
-  "macos_dialog": false,
   "timeout_seconds": 60,
-  "timeout_action": "deny"
+  "timeout_action": "deny",
+  "macos_dialog": false
 }
 ```
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `ntfy.topic` | *(generated)* | Your private ntfy topic — keep it secret |
-| `summarizer.enabled` | `true` | AI summaries using Claude Haiku — no API setup needed |
-| `summarizer.model` | `claude-haiku-3-5` | Override to use a different model (optional) |
-| `callback_port` | `45678` | Fixed port the hook listens on |
-| `escalation_delay_seconds` | `10` | Seconds before escalating *(if `macos_dialog` is on)* |
-| `macos_dialog` | `false` | Show a native macOS dialog before sending to Watch |
-| `timeout_seconds` | `60` | How long to wait before auto-deny |
+| `ntfy.topic` | `""` | Your private ntfy topic — **required for phone/Watch notifications** |
+| `ntfy.server` | `"https://ntfy.sh"` | Use your own self-hosted ntfy server for full privacy |
+| `summarizer.enabled` | `true` | AI plain-English summaries using Claude Haiku |
+| `summarizer.model` | `"claude-haiku-3-5"` | Swap to any LiteLLM-compatible model |
+| `escalation_delay_seconds` | `10` | Seconds to wait at terminal before sending to watch |
+| `timeout_seconds` | `60` | Total wait time before auto-action |
 | `timeout_action` | `"deny"` | `"deny"` or `"allow"` on timeout |
+| `macos_dialog` | `false` | Show a native macOS dialog before escalating to Watch |
+| `auto_approve` | *(read-only cmds)* | List of glob patterns to silently auto-approve |
 
-> **API key**: Claude Code passes `ANTHROPIC_API_KEY` to all hooks automatically — no setup needed. The summarizer works out of the box.
+> **API key:** Claude Code automatically passes `ANTHROPIC_API_KEY` to all hooks. The AI summarizer works without any extra setup.
 
-### Use a different model
+### Smart Auto-Approve
 
-By default Claude Haiku is used — powered by your existing Claude Code API key, zero config.
-To switch providers (OpenAI, Gemini, Mistral, Ollama, etc.):
-
-```json
-"model": "gpt-4o-mini",
-"api_key_env": "OPENAI_API_KEY"
-```
-
-### Self-host ntfy
-
-Point `"server"` at your own ntfy instance for full data sovereignty.
-
-### Optional: macOS dialog before Watch
-
-Enable a native Mac dialog that appears for 10 seconds before escalating to your Watch — handy if you're at your desk:
+Commands matching these glob patterns are silently approved without any notification:
 
 ```json
-"macos_dialog": true
+"auto_approve": ["ls*", "cat*", "pwd", "whoami", "git status*", "git log*"]
 ```
 
----
-
-## Security
-
-### Per-request token
-Every notification includes a random **16-byte secret token** embedded in the action button URLs:
-```
-http://192.168.x.x:45678/approve?token=X7kP2mNqRs4vW9tL
-```
-The local server validates it using `secrets.compare_digest()` (timing-safe). Any request without the correct token gets **403 Forbidden** — even from devices on your LAN.
-
-### Private ntfy topic
-Your topic name is the first line of defense — only devices subscribed to your topic receive the notification. The auto-generated topic is a random 5-word phrase. Keep it private.
-
-### Port scope
-Port `45678` is only reachable on your local network. It's not exposed to the internet unless you've set up explicit port forwarding. The server only runs for the duration of each permission request (~60s max).
+Customize or clear the list to control what requires approval.
 
 ---
 
 ## Compatibility
 
-| Surface | Hooks supported? |
-|---------|-----------------|
-| `claude` in terminal | ✅ Full support |
-| Claude Code (any terminal) | ✅ Full support |
-| VS Code / Desktop app | ❌ These use built-in native UIs |
+| Environment | Supported? |
+|-------------|------------|
+| `claude` in any terminal | ✅ Full support |
+| VS Code with Claude Code extension | ✅ Full support |
+| Claude Free plan | ✅ Works |
+| Claude Pro plan | ✅ Works |
+| Claude Max / API | ✅ Works |
+| Apple Watch | ✅ Alert buzz (action on iPhone) |
+| Android phone | ✅ Full action buttons |
 
-> This project uses Claude Code's `PermissionRequest` hook — a feature **unique to Claude Code** among major AI CLI agents. Gemini CLI, Codex CLI, and Aider don't have an equivalent hook system as of early 2025.
+> Uses Claude Code's `PermissionRequest` hook — available in **all** Claude Code environments (terminal and VS Code).
 
 ---
 
-## Testing
+## Security
 
-```bash
-python3 test_hook.py
-```
-
-Validates the summarizer, hook JSON output, and simulates a full permission request locally — no Watch needed.
+- **Cloud relay:** Approve/Reject buttons POST to a **unique, one-time private ntfy topic** (`<your_topic>_resp_<random>`). The Mac polls that topic over HTTPS. No ports are opened on your Mac.
+- **Private topic:** Your topic name is kept secret — only you are subscribed.
+- **No data stored:** The plugin runs entirely on your own machine. Nothing is sent to any external server except the ntfy notification itself.
 
 ---
 
@@ -207,13 +180,13 @@ Validates the summarizer, hook JSON output, and simulates a full permission requ
 
 ```
 clauding-afk/
-├── .claude-plugin/      ← Plugin manifest
-├── hooks/               ← Auto-registers PermissionRequest hook
-├── watch_approver.py    ← Hook entry point: server, ntfy, decision logic
-├── summarizer.py        ← LiteLLM summarization with local fallback
-├── config.example.json  ← Config template
-├── uninstall.sh         ← Cleanup script for legacy users
-├── test_hook.py         ← Local test suite
+├── plugin/
+│   ├── .claude-plugin/     ← Plugin manifest (v1.2.0)
+│   ├── hooks/              ← Auto-registers PermissionRequest hook
+│   ├── watch_approver.py   ← Hook: terminal prompt, ntfy push, cloud relay
+│   ├── summarizer.py       ← AI summary via LiteLLM
+│   └── config.example.json ← Config template
+├── .claude-plugin/         ← Marketplace manifest
 └── README.md
 ```
 
