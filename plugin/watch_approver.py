@@ -9,7 +9,6 @@ Usage (configured automatically by install.sh):
     to stdin; this script outputs a JSON decision to stdout and exits 0.
 """
 
-import http.server
 import json
 import os
 import secrets
@@ -90,71 +89,58 @@ def _output_decision(behavior: str, reason: str = "", always: bool = False) -> N
 
 
 # ---------------------------------------------------------------------------
-# Local callback server
+# Cloud relay (ntfy pub/sub) — replaces local callback server
 # ---------------------------------------------------------------------------
+# Instead of making the phone HTTP-call back to the Mac's LAN IP
+# (which fails with AP-isolation, cellular, etc.) we:
+#   1. Generate a unique one-time response topic: <main_topic>_resp_<token>
+#   2. The notification action buttons POST "approve"/"always"/"reject" to that topic
+#   3. The Mac polls the response topic via HTTPS until it gets a decision
+# Requires no open ports, works from cellular, Watch, or any network.
 
-class _CallbackHandler(http.server.BaseHTTPRequestHandler):
-    """Tiny HTTP server that listens for one tap from the ntfy action button.
+_response_result: dict = {"value": None}   # "approve" | "always" | "reject"
+_response_event = threading.Event()
 
-    Security: each request includes a random token generated at server start.
-    The server rejects any request that doesn't carry the correct token,
-    preventing other devices on the LAN from spoofing approve/reject.
+
+def _make_response_topic(base_topic: str) -> tuple:
+    """Return (response_topic, token) for this request."""
+    token = secrets.token_urlsafe(12)
+    return f"{base_topic}_resp_{token}", token
+
+
+def _poll_response_topic(server: str, response_topic: str, timeout: float) -> None:
+    """Subscribe to the ntfy response topic and wait for a decision message.
+
+    Runs in a background thread. Sets _response_event when a valid message arrives.
+    Uses ntfy's JSON polling (GET /topic/json?poll=1&since=all is avoided;
+    we use a continuous SSE-style connection with since=0 to catch new messages).
     """
-
-    result = None        # "approve" | "always" | "reject"
-    _lock = threading.Event()
-    _expected_token: str = ""        # set per-request in _start_callback_server
-
-    def do_GET(self):
-        parsed = urllib.parse.urlparse(self.path)
-        params = urllib.parse.parse_qs(parsed.query)
-        token = params.get("token", [""])[0]
-
-        # ── Token check ────────────────────────────────────────────────────
-        if not secrets.compare_digest(token, _CallbackHandler._expected_token):
-            self.send_response(403)
-            self.end_headers()
-            self.wfile.write(b"Forbidden")
-            return
-
-        action = parsed.path.strip("/").lower()
-        if action in ("approve", "always", "reject"):
-            _CallbackHandler.result = action
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK")
-            _CallbackHandler._lock.set()
-        else:
-            self.send_response(404)
-            self.end_headers()
-
-    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
-        pass  # Suppress request logs
-
-
-def _get_callback_port(config: dict) -> int:
-    """Use a fixed port from config so macOS firewall rules stay stable.
-    Falls back to a random free port if not configured."""
-    fixed = config.get("callback_port")
-    if fixed:
-        return int(fixed)
-    # Dynamic fallback (useful for testing, but firewall may block LAN access)
-    with socket.socket() as s:
-        s.bind(("0.0.0.0", 0))
-        return s.getsockname()[1]
-
-
-def _start_callback_server(port: int) -> http.server.HTTPServer:
-    # Generate a fresh random token for this request
-    _CallbackHandler._expected_token = secrets.token_urlsafe(16)
-    # Reset state
-    _CallbackHandler.result = None
-    _CallbackHandler._lock.clear()
-    # Bind to 0.0.0.0 so iPhone/Watch on the same LAN can reach us
-    server = http.server.HTTPServer(("0.0.0.0", port), _CallbackHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return server
+    url = f"{server}/{urllib.parse.quote(response_topic, safe='')}/json"
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and not _response_event.is_set():
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/x-ndjson"})
+            with urllib.request.urlopen(req, timeout=min(30, deadline - time.monotonic())) as resp:
+                for raw_line in resp:
+                    if _response_event.is_set():
+                        break
+                    line = raw_line.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    try:
+                        msg = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if msg.get("event") == "open":
+                        continue
+                    decision = msg.get("message", "").strip().lower()
+                    if decision in ("approve", "always", "reject"):
+                        _response_result["value"] = decision
+                        _response_event.set()
+                        return
+        except Exception:
+            # Network blip — retry loop handles it
+            time.sleep(1)
 
 
 # ---------------------------------------------------------------------------
@@ -192,64 +178,47 @@ def _is_auto_approved(hook_data: dict, config: dict) -> bool:
 # ntfy.sh notification
 # ---------------------------------------------------------------------------
 
-def _send_ntfy(summary: str, port: int, config: dict):
+def _send_ntfy(summary: str, response_topic: str, config: dict) -> bool:
+    """Push a notification with Approve/Reject buttons that publish to response_topic.
+
+    Returns True on success, False if ntfy is not configured.
+    The buttons use ntfy's 'http' action to POST a plain body (approve/always/reject)
+    directly to our private response topic on ntfy.sh — no LAN IP needed.
+    """
     ntfy_cfg = config.get("ntfy", {})
     server = ntfy_cfg.get("server", "https://ntfy.sh").rstrip("/")
     topic = ntfy_cfg.get("topic", "")
 
     if not topic:
-        return None
+        return False
 
-    # Get Mac's LAN IP via UDP trick (no data sent)
-    try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as _s:
-            _s.connect(("8.8.8.8", 80))
-            local_ip = _s.getsockname()[0]
-    except Exception:
-        local_ip = "127.0.0.1"
-    base_url = f"http://{local_ip}:{port}"
-    token = _CallbackHandler._expected_token  # set by _start_callback_server
+    resp_url = f"{server}/{urllib.parse.quote(response_topic, safe='')}"
 
     headers = {
-        # Headers must be latin-1 safe — no emojis here.
-        # ntfy prepends Tags as emoji icons before the title (robot=🤖, key=🔑).
         "Title": "ClaudeCode Plugin",
         "Priority": "high",
         "Tags": "electric_plug,robot,key",
-        # 'http' action type: ntfy sends a background HTTP request from the app.
-        # Works on Apple Watch via companion app (unlike 'view' which opens a browser).
-        # Token in URL prevents LAN spoofing — only the notification recipient
-        # who received the exact URL can trigger approve/reject.
+        # Buttons POST a plain-text body to the response topic on ntfy.sh.
+        # This works from any network — no LAN IP needed.
         "Actions": (
-            f"http, Approve, {base_url}/approve?token={token}, method=GET, clear=true; "
-            f"http, Always Allow, {base_url}/always?token={token}, method=GET, clear=true; "
-            f"http, Reject, {base_url}/reject?token={token}, method=GET, clear=true"
+            f"http, Approve, {resp_url}, method=POST, body=approve, clear=true; "
+            f"http, Always Allow, {resp_url}, method=POST, body=always, clear=true; "
+            f"http, Reject, {resp_url}, method=POST, body=reject, clear=true"
         ),
         "Content-Type": "text/plain; charset=utf-8",
     }
-    
-    # Store message ID if we want to refer to this specific notification later
-    # ntfy returns the message ID in the response headers/JSON
-    message_id = None
 
     url = f"{server}/{urllib.parse.quote(topic, safe='')}"
     data = summary.encode("utf-8")
-
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             if resp.status not in (200, 201, 204):
                 _fatal(f"ntfy.sh returned HTTP {resp.status}")
-            # Try to grab the message ID so we can edit/clear it later if needed
-            try:
-                resp_data = json.loads(resp.read().decode('utf-8'))
-                message_id = resp_data.get('id')
-            except Exception:
-                pass
     except Exception as e:
         _fatal(f"Failed to send ntfy notification: {e}")
-        
-    return message_id
+
+    return True
 
 
 def _send_ntfy_resolution(summary: str, result_icon: str, original_id, config: dict) -> None:
@@ -363,9 +332,6 @@ def _wait_for_terminal_keypress(base_url: str, token: str, delay: int, summary: 
     except OSError:
         return False  # no controlling TTY (e.g. running in background)
 
-    approve_url = f"{base_url}/approve?token={token}"
-    reject_url  = f"{base_url}/reject?token={token}"
-
     # Print prompt to stderr (stdout carries the JSON decision)
     if is_configured:
         prompt = (
@@ -396,17 +362,20 @@ def _wait_for_terminal_keypress(base_url: str, token: str, delay: int, summary: 
                 continue
             ch = tty_file.read(1).decode("utf-8", errors="ignore").lower()
             if ch in ("a", "y", "\r", "\n"):      # approve
-                urllib.request.urlopen(approve_url, timeout=3)
+                _response_result["value"] = "approve"
+                _response_event.set()
                 responded = True
                 break
             elif ch in ("n", "r"):                # reject
-                urllib.request.urlopen(reject_url, timeout=3)
+                _response_result["value"] = "reject"
+                _response_event.set()
                 responded = True
                 break
             elif ch == "w":                       # skip to Watch now
                 break
             elif ch in ("\x03", "\x04"):          # Ctrl-C / Ctrl-D — reject
-                urllib.request.urlopen(reject_url, timeout=3)
+                _response_result["value"] = "reject"
+                _response_event.set()
                 responded = True
                 break
     except Exception:
@@ -421,6 +390,7 @@ def _wait_for_terminal_keypress(base_url: str, token: str, delay: int, summary: 
         print(f"\r{' ' * 80}\r", end="", flush=True, file=sys.stderr)
 
     return responded
+
 
 
 def _build_inline_summary(hook_data: dict, project_name: str) -> str:
@@ -455,53 +425,43 @@ def main() -> None:
     project_name = os.path.basename(cwd) if cwd else "Unknown"
 
     # 5. Build a FAST inline summary for the terminal prompt (no LLM call yet).
-    #    The LLM summarizer runs only if the user doesn't respond within the
-    #    escalation window — i.e. only when we actually need to send to the Watch.
     terminal_summary = _build_inline_summary(hook_data, project_name)
 
-    # 6. Start local callback server
-    port   = _get_callback_port(config)
-    server = _start_callback_server(port)
-    token  = _CallbackHandler._expected_token
-
-    ntfy_cfg = config.get("ntfy", {})
-    topic = ntfy_cfg.get("topic", "")
+    ntfy_cfg    = config.get("ntfy", {})
+    ntfy_server = ntfy_cfg.get("server", "https://ntfy.sh").rstrip("/")
+    topic       = ntfy_cfg.get("topic", "")
 
     total_timeout    = config.get("timeout_seconds", 60)
-    
-    # If unconfigured, block in the terminal prompt for the entire timeout duration 
-    # instead of escalating to missing watch notifications.
-    if not topic:
-        escalation_delay = total_timeout
-    else:
-        escalation_delay = config.get("escalation_delay_seconds", 10)
+    escalation_delay = total_timeout if not topic else config.get("escalation_delay_seconds", 10)
+
+    # 6. Create a unique one-time response topic for this request.
+    #    The phone's Approve/Reject buttons POST to this topic on ntfy.sh cloud.
+    response_topic, _token = _make_response_topic(topic or "clauding-afk-default")
+
+    # Reset cloud relay state
+    _response_result["value"] = None
+    _response_event.clear()
 
     macos_proc = None
-    ntfy_msg_id = None
+    ntfy_sent  = False
 
     try:
-        local_base = f"http://127.0.0.1:{port}"
+        # ── Stage 1a: Terminal keypress ───────────────────────────────────────
+        tapped = _wait_for_terminal_keypress(
+            "", "", escalation_delay, terminal_summary,
+            is_configured=bool(topic)
+        )
 
-        # ── Stage 1a: Terminal keypress (default, non-modal) ──────────────────
-        # Shows the prompt with the fast inline summary (no API latency).
-        # The full LLM summary is only computed *after* if we need to escalate.
-        tapped = _wait_for_terminal_keypress(local_base, token, escalation_delay, terminal_summary, is_configured=bool(topic))
-
-        # ── Stage 1b (optional): macOS dialog overlay ──────────────────────────
-        # Enable with "macos_dialog": true.
-        # If terminal TTY was skipped, the macos dialog handles the delay.
-        macos_proc = None
+        # ── Stage 1b (optional): macOS dialog ────────────────────────────────
         if not tapped and config.get("macos_dialog", False) and sys.platform == "darwin":
-            macos_proc = _show_macos_dialog(terminal_summary, local_base, token, escalation_delay)
-            tapped = _CallbackHandler._lock.wait(timeout=escalation_delay)
+            macos_proc = _show_macos_dialog(
+                terminal_summary, "http://127.0.0.1:1", "", escalation_delay
+            )
+            tapped = _response_event.wait(timeout=escalation_delay)
 
         if not tapped:
             # ── Stage 2: ntfy → phone / Apple Watch ──────────────────────────
-            # Only NOW run the (potentially slow) LLM summarizer — only if the
-            # user didn't respond during the escalation delay. This means we
-            # never spend an API call on commands you approve at the terminal.
             try:
-                # Use path-based import so it works from the plugin cache dir
                 import importlib.util as _ilu
                 _spec = _ilu.spec_from_file_location(
                     "summarizer",
@@ -511,50 +471,56 @@ def main() -> None:
                 _spec.loader.exec_module(_mod)  # type: ignore
                 watch_summary = _mod.summarize(hook_data, config, project_name)
             except Exception:
-                watch_summary = terminal_summary  # fall back to inline summary
+                watch_summary = terminal_summary
 
-            ntfy_msg_id = _send_ntfy(watch_summary, port, config)
+            ntfy_sent = _send_ntfy(watch_summary, response_topic, config)
+
+            if ntfy_sent:
+                poll_thread = threading.Thread(
+                    target=_poll_response_topic,
+                    args=(ntfy_server, response_topic, total_timeout - escalation_delay),
+                    daemon=True
+                )
+                poll_thread.start()
+
             remaining = total_timeout - escalation_delay
-            tapped = _CallbackHandler._lock.wait(timeout=max(remaining, 5))
+            _response_event.wait(timeout=max(remaining, 5))
         else:
-            # Responded before escalation — no LLM needed, no Watch buzz
             watch_summary = terminal_summary
 
-        result = _CallbackHandler.result if tapped else None
+        result = _response_result["value"]
 
     finally:
-        server.shutdown()
-        # Kill the macOS dialog if it’s still open (user responded via Watch)
         if macos_proc is not None:
             try:
                 macos_proc.terminate()
             except Exception:
                 pass
 
-    # 7. Output decision and send resolution notification to phone (if ntfy was sent)
+    # 7. Output decision
     if result == "approve":
-        if ntfy_msg_id:
-            _send_ntfy_resolution(watch_summary, "white_check_mark", ntfy_msg_id, config)
+        if ntfy_sent:
+            _send_ntfy_resolution(watch_summary, "white_check_mark", None, config)
         _output_decision("allow")
     elif result == "always":
-        if ntfy_msg_id:
-            _send_ntfy_resolution(watch_summary, "white_check_mark", ntfy_msg_id, config)
+        if ntfy_sent:
+            _send_ntfy_resolution(watch_summary, "white_check_mark", None, config)
         _output_decision("allow", always=True)
     else:
         timeout_action = config.get("timeout_action", "deny")
         reason = (
-            "Rejected from Apple Watch."
+            "Rejected from Watch/Phone."
             if result == "reject"
             else "Approval timed out — defaulting to deny."
         )
         if result is None and timeout_action == "allow":
-            if ntfy_msg_id:
-                _send_ntfy_resolution(watch_summary, "white_check_mark", ntfy_msg_id, config)
+            if ntfy_sent:
+                _send_ntfy_resolution(watch_summary, "white_check_mark", None, config)
             _output_decision("allow", reason="Timed out — auto-approved per config.")
         else:
-            if ntfy_msg_id:
+            if ntfy_sent:
                 icon = "no_entry_sign" if result == "reject" else "hourglass"
-                _send_ntfy_resolution(watch_summary, icon, ntfy_msg_id, config)
+                _send_ntfy_resolution(watch_summary, icon, None, config)
             _output_decision("deny", reason=reason)
 
 
