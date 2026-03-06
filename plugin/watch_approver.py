@@ -496,22 +496,20 @@ def main() -> None:
             tapped = _CallbackHandler._lock.wait(timeout=escalation_delay)
 
         if not tapped:
-            # ── Stage 1c: Plain sleep fallback ───────────────────────────────
-            # If neither the TTY prompt nor the macOS dialog ran (e.g. Claude
-            # Code's hook has no controlling terminal), we still honour the
-            # escalation delay so the phone/Watch notification isn't instant.
-            # We poll the callback lock so a response from any other stage
-            # (e.g. a browser extension in future) can cut the wait short.
-            tapped = _CallbackHandler._lock.wait(timeout=escalation_delay)
-
-        if not tapped:
             # ── Stage 2: ntfy → phone / Apple Watch ──────────────────────────
             # Only NOW run the (potentially slow) LLM summarizer — only if the
             # user didn't respond during the escalation delay. This means we
             # never spend an API call on commands you approve at the terminal.
             try:
-                from summarizer import summarize  # type: ignore
-                watch_summary = summarize(hook_data, config, project_name)
+                # Use path-based import so it works from the plugin cache dir
+                import importlib.util as _ilu
+                _spec = _ilu.spec_from_file_location(
+                    "summarizer",
+                    Path(__file__).parent / "summarizer.py"
+                )
+                _mod = _ilu.module_from_spec(_spec)  # type: ignore
+                _spec.loader.exec_module(_mod)  # type: ignore
+                watch_summary = _mod.summarize(hook_data, config, project_name)
             except Exception:
                 watch_summary = terminal_summary  # fall back to inline summary
 
